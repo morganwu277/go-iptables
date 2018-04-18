@@ -24,6 +24,16 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"os"
+	"bufio"
+)
+
+type CommandType int
+
+const (
+	CmdIPTables        = iota
+	CmdIPTablesRestore
+	CmdIPTablesSave
 )
 
 // Adds the output of stderr to exec.ExitError
@@ -58,6 +68,7 @@ const (
 
 type IPTables struct {
 	path     string
+	cmdType  CommandType
 	proto    Protocol
 	hasCheck bool
 	hasWait  bool
@@ -82,11 +93,40 @@ func NewWithProtocol(proto Protocol) (*IPTables, error) {
 	}
 	ipt := IPTables{
 		path:     path,
+		cmdType:  CmdIPTables,
 		proto:    proto,
 		hasCheck: checkPresent,
 		hasWait:  waitPresent,
 	}
 	return &ipt, nil
+}
+
+func (ipt *IPTables) ApplyCmdType(commandType CommandType) Protocol {
+	switch ipt.cmdType {
+	case CmdIPTables:
+		if commandType == CmdIPTablesSave {
+			ipt.path = ipt.path + "-save"
+		}
+		if commandType == CmdIPTablesRestore {
+			ipt.path = ipt.path + "-restore"
+		}
+	case CmdIPTablesSave:
+		if commandType == CmdIPTables {
+			ipt.path = strings.Replace(ipt.path, "-save", "", 1)
+		}
+		if commandType == CmdIPTablesRestore {
+			ipt.path = strings.Replace(ipt.path, "-save", "-restore", 1)
+		}
+	case CmdIPTablesRestore:
+		if commandType == CmdIPTables {
+			ipt.path = strings.Replace(ipt.path, "-restore", "", 1)
+		}
+		if commandType == CmdIPTablesSave {
+			ipt.path = strings.Replace(ipt.path, "-restore", "-save", 1)
+		}
+	}
+	ipt.cmdType = commandType
+	return ipt.proto
 }
 
 // Proto returns the protocol used by this IPTables.
@@ -111,6 +151,27 @@ func (ipt *IPTables) Exists(table, chain string, rulespec ...string) (bool, erro
 	default:
 		return false, err
 	}
+}
+
+func (ipt *IPTables) Save(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	err = ipt.runWithOutput(nil, w)
+	w.Flush()
+	return err
+}
+
+func (ipt *IPTables) Restore(path string) error {
+	f, err := os.OpenFile(path, os.O_RDWR, os.ModeType)
+	if err != nil {
+		return err
+	}
+	r := bufio.NewReader(f)
+	return ipt.runWithInput(nil, r)
 }
 
 // Insert inserts rulespec to specified table/chain (in specified pos)
@@ -311,7 +372,7 @@ func (ipt *IPTables) run(args ...string) error {
 // writing any stdout output to the given writer
 func (ipt *IPTables) runWithOutput(args []string, stdout io.Writer) error {
 	args = append([]string{ipt.path}, args...)
-	if ipt.hasWait {
+	if ipt.hasWait && ipt.cmdType == CmdIPTables {
 		args = append(args, "--wait")
 	} else {
 		fmu, err := newXtablesFileLock()
@@ -342,6 +403,42 @@ func (ipt *IPTables) runWithOutput(args []string, stdout io.Writer) error {
 		}
 	}
 
+	return nil
+}
+
+// runWithInput runs an iptables command with the given input,
+func (ipt *IPTables) runWithInput(args []string, stdin io.Reader) error {
+	args = append([]string{ipt.path}, args...)
+	if ipt.hasWait && ipt.cmdType == CmdIPTables {
+		args = append(args, "--wait")
+	} else {
+		fmu, err := newXtablesFileLock()
+		if err != nil {
+			return err
+		}
+		ul, err := fmu.tryLock()
+		if err != nil {
+			return err
+		}
+		defer ul.Unlock()
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.Cmd{
+		Path:   ipt.path,
+		Args:   args,
+		Stdin:  stdin,
+		Stderr: &stderr,
+	}
+
+	if err := cmd.Run(); err != nil {
+		switch e := err.(type) {
+		case *exec.ExitError:
+			return &Error{*e, cmd, stderr.String()}
+		default:
+			return err
+		}
+	}
 	return nil
 }
 
