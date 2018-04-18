@@ -15,23 +15,23 @@
 package iptables
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
-	"os"
-	"bufio"
 )
 
 type CommandType int
 
 const (
-	CmdIPTables        = iota
+	CmdIPTables = iota
 	CmdIPTablesRestore
 	CmdIPTablesSave
 )
