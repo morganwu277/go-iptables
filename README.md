@@ -18,3 +18,27 @@ Running tests...
 ok  	github.com/morganwu277/go-iptables/iptables	(cached)	coverage: 74.1% of statements
 Success
 ```
+
+## Sample Usage
+Pls review `example` folder
+And next is the corresponding output when executing `./build_run.sh`:
+```bash
+	 -P INPUT ACCEPT
+===========================
+Adding unique new port 22 from 192.0.2.0/24
+	 -P INPUT ACCEPT
+	 -A INPUT -s 192.0.2.0/24 -p udp -m udp --dport 22 -j ACCEPT
+===========================
+Save iptables to /tmp/rules.v4
+	 -P INPUT ACCEPT
+	 -A INPUT -s 192.0.2.0/24 -p udp -m udp --dport 22 -j ACCEPT
+===========================
+Restore iptables from /tmp/rules.v4
+	 -P INPUT ACCEPT
+	 -A INPUT -s 192.0.2.0/24 -p udp -m udp --dport 22 -j ACCEPT
+===========================
+Deleting unique new port 22 from 192.0.2.0/24
+	 -P INPUT ACCEPT
+===========================
+```
+
